@@ -1,0 +1,8 @@
+let MaliciousExtension = dynamic([".exe",".js",".cs",".ps",".ps1",".jpg",".ping",
+                                    ".bat",".cmd",".vbs",".jse",".sh",".zip"]);
+DeviceFileEvents
+| where FileName matches regex @".*\.[^.]+\.[^.]+$"
+| extend Extension = tostring(split("FileName",".")[-1]) 
+| extend FinalExtension = strcat(".",Extension)
+| where FinalExtension  in(MaliciousExtension)
+| project Timestamp , DeviceId , DeviceName , ActionType , FileName
