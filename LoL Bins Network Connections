@@ -1,0 +1,10 @@
+DeviceNetworkEvents
+| where RemoteIP != "127.0.0.1" and RemotePort in("22","21","3389","25","445","4444","5985","5986")
+| extend processname = InitiatingProcessFileName , parentprocess = InitiatingProcessParentFileName , commandLine = InitiatingProcessCommandLine
+| where processname in ("powershell.exe", "cmd.exe" , "mshta.exe" , "wscript.exe" , 
+        "csript.exe", "notepad.exe", "rundll32.exe" , "wmpiprvse.exe")
+| extend SuspiciousIP = 
+    case(ipv4_is_private(RemoteIP) == false, "Public IP" , RemotePort in (4444, 3389), "Common Attack Ports", 
+    "Unusual Activity")
+| summarize count() , Firstseen = min(Timestamp) , LastSeen = max(Timestamp) by DeviceName , processname , parentprocess , commandLine ,SuspiciousIP , RemoteIP ,  RemotePort , RemoteUrl
+| where count_ > 1
