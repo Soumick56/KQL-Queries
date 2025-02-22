@@ -1,0 +1,8 @@
+DeviceLogonEvents
+| where RemoteIP !in~ ("","-","127.0.0.1")
+| where not(ipv4_is_private( RemoteIP))
+| where not(ipv4_is_in_range(RemoteIP,"100.64.0.0/10"))
+| summarize LoginCount = count() , Location = make_set(RemoteIP) by AccountName
+| where LoginCount  >=3 and array_length( Location) >= 3 
+| project  AccountName , LoginCount , Location 
+| sort by LoginCount desc 
