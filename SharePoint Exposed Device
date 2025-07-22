@@ -1,0 +1,33 @@
+DeviceProcessEvents
+| where InitiatingProcessFileName has "w3wp.exe"
+ and InitiatingProcessCommandLine !has "DefaultAppPool"
+ and FileName =~ "cmd.exe"
+ and ProcessCommandLine has_all ("cmd.exe", "powershell")
+ and ProcessCommandLine has_any ("EncodedCommand", "-ec")
+| extend CommandArguments = split(ProcessCommandLine, " ")
+| mv-expand CommandArguments to typeof(string)
+| where CommandArguments matches regex "^[A-Za-z0-9+/=]{15,}$"
+| extend B64Decode = replace("\\x00", "", base64_decodestring(tostring(CommandArguments)))  
+| where B64Decode has_any ("spinstall0", @'C:\PROGRA~1\COMMON~1\MICROS~1\WEBSER~1\15\TEMPLATE\LAYOUTS', @'C:\PROGRA~1\COMMON~1\MICROS~1\WEBSER~1\16\TEMPLATE\LAYOUTS')
+
+
+let suspiciousIPs = dynamic(["107.191.58.76", "104.238.159.149", "96.9.125.147"]);
+let webshellNames = dynamic(["spinstall0.aspx", "spinstall1.aspx", "tool.aspx", "shell.aspx"]);
+let WebshellDetection = 
+    DeviceFileEvents
+    | where FolderPath has @"\TEMPLATE\LAYOUTS\" 
+        and FileName endswith ".aspx"
+        and FileName in~ (webshellNames)
+    | extend FilePath = strcat(FolderPath, FileName)
+    | project DetectionTime=Timestamp, DeviceName, FilePath, 
+              AccountName=InitiatingProcessAccountName, SHA256;
+let AttackerIPs = 
+    DeviceNetworkEvents
+    | where RemoteIP has_any (suspiciousIPs)
+    | project DetectionTime=Timestamp, DeviceName, RemoteIP, 
+              RemoteUrl, AccountName=InitiatingProcessAccountName;
+let PostExploitation = 
+    DeviceProcessEvents
+    | where InitiatingProcessParentFileName =~ "w3wp.exe"
+    | where InitiatingProcessFileName  !in~ ("cmd.exe", "powershell.exe", "msiexec.exe", "cscript.exe")
+    | project DetectionTime=Timestamp, DeviceName, ProcessCommandLine, AccountName;
