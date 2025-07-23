@@ -10,24 +10,32 @@ DeviceProcessEvents
 | extend B64Decode = replace("\\x00", "", base64_decodestring(tostring(CommandArguments)))  
 | where B64Decode has_any ("spinstall0", @'C:\PROGRA~1\COMMON~1\MICROS~1\WEBSER~1\15\TEMPLATE\LAYOUTS', @'C:\PROGRA~1\COMMON~1\MICROS~1\WEBSER~1\16\TEMPLATE\LAYOUTS')
 
-
-let suspiciousIPs = dynamic(["107.191.58.76", "104.238.159.149", "96.9.125.147"]);
+//Custom Query by me 
 let webshellNames = dynamic(["spinstall0.aspx", "spinstall1.aspx", "tool.aspx", "shell.aspx"]);
+let suspiciousIPs = dynamic(["107.191.58.76", "104.238.159.149", "96.9.125.147"]);
+let AttackerIPs = 
+    DeviceNetworkEvents
+    | where RemoteIP has_any (suspiciousIPs)
+    | project DeviceName, AttackerIP = RemoteIP, RemoteUrl, AttackerAccount = InitiatingProcessAccountName, AttackerTime = Timestamp;
+let PostExploitation = 
+    DeviceProcessEvents
+    | where InitiatingProcessParentFileName =~ "w3wp.exe"
+    | where InitiatingProcessFileName  !in~ ("cmd.exe", "powershell.exe", "msiexec.exe", "cscript.exe")
+    | project DeviceName, PostExFile = FileName, PostExParent = InitiatingProcessParentFileName,
+     PostExCommand = ProcessCommandLine, PostExAccount = InitiatingProcessAccountName, PostExTime = Timestamp;
 let WebshellDetection = 
     DeviceFileEvents
     | where FolderPath has @"\TEMPLATE\LAYOUTS\" 
         and FileName endswith ".aspx"
         and FileName in~ (webshellNames)
     | extend FilePath = strcat(FolderPath, FileName)
-    | project DetectionTime=Timestamp, DeviceName, FilePath, 
-              AccountName=InitiatingProcessAccountName, SHA256;
-let AttackerIPs = 
-    DeviceNetworkEvents
-    | where RemoteIP has_any (suspiciousIPs)
-    | project DetectionTime=Timestamp, DeviceName, RemoteIP, 
-              RemoteUrl, AccountName=InitiatingProcessAccountName;
-let PostExploitation = 
-    DeviceProcessEvents
-    | where InitiatingProcessParentFileName =~ "w3wp.exe"
-    | where InitiatingProcessFileName  !in~ ("cmd.exe", "powershell.exe", "msiexec.exe", "cscript.exe")
-    | project DetectionTime=Timestamp, DeviceName, ProcessCommandLine, AccountName;
+    | project DeviceName, WebshellFile = FileName, WebshellPath = FilePath, WebshellHash = SHA256, 
+    WebshellAccount = InitiatingProcessAccountName, WebshellTime = Timestamp;
+AttackerIPs
+| join kind=inner (PostExploitation) on DeviceName
+| join kind=inner (WebshellDetection) on DeviceName
+| project DeviceName, 
+          AttackerIP, RemoteUrl, AttackerAccount, AttackerTime,
+          PostExFile, PostExParent, PostExCommand, PostExAccount, PostExTime,
+          WebshellFile, WebshellPath, WebshellHash, WebshellAccount, WebshellTime
+| order by AttackerTime desc
