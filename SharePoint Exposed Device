@@ -39,3 +39,43 @@ AttackerIPs
           PostExFile, PostExParent, PostExCommand, PostExAccount, PostExTime,
           WebshellFile, WebshellPath, WebshellHash, WebshellAccount, WebshellTime
 | order by AttackerTime desc
+
+//To Craeted a custom KQL this is the Updated version 
+
+let webshellNames = dynamic(["spinstall0.aspx", "spinstall1.aspx", "tool.aspx", "shell.aspx"]);
+let suspiciousIPs = dynamic(["107.191.58.76", "104.238.159.149", "96.9.125.147"]);
+let AttackerIPs = 
+    DeviceNetworkEvents
+    | where RemoteIP in (suspiciousIPs)
+    | project DeviceId, Timestamp, ReportId, DeviceName, AttackerIP = RemoteIP, RemoteUrl, AttackerAccount = InitiatingProcessAccountName;
+let PostExploitation = 
+    DeviceProcessEvents
+    | where InitiatingProcessParentFileName =~ "w3wp.exe"
+    | where InitiatingProcessFileName  !in~ ("cmd.exe", "powershell.exe", "msiexec.exe", "cscript.exe")
+    | project DeviceId, Timestamp, ReportId, DeviceName, PostExFile = FileName, PostExParent = InitiatingProcessParentFileName,
+     PostExCommand = ProcessCommandLine, PostExAccount = InitiatingProcessAccountName, PostExTime = Timestamp;
+let WebshellDetection = 
+    DeviceFileEvents
+    | where FolderPath has @"\TEMPLATE\LAYOUTS\" 
+        and FileName endswith ".aspx"
+        and FileName in~ (webshellNames)
+    | extend FilePath = strcat(FolderPath,"\\", FileName)
+    | project DeviceId, Timestamp, ReportId, DeviceName, WebshellFile = FileName, WebshellPath = FilePath, WebshellHash = SHA256, 
+    WebshellAccount = InitiatingProcessAccountName, WebshellTime = Timestamp;
+AttackerIPs
+| join kind=inner (PostExploitation) on DeviceId
+| join kind=inner (WebshellDetection) on DeviceId
+| project DeviceId, Timestamp, ReportId,DeviceName,AttackerIP, RemoteUrl, AttackerAccount,
+          PostExFile, PostExParent, PostExCommand, PostExAccount, PostExTime,
+          WebshellFile, WebshellPath, WebshellHash, WebshellAccount, WebshellTime
+| order by Timestamp desc
+
+
+
+
+
+
+
+
+
+
